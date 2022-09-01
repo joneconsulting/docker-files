@@ -1,0 +1,22 @@
+FROM arm64v8/ubuntu
+
+# install sshd
+RUN apt update
+RUN apt install -y openssh-server \
+&& sed 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' -i /etc/ssh/sshd_config \
+&& echo 'root:P@ssw0rd' | chpasswd
+RUN ssh-keygen -y -f /etc/ssh/ssh_host_rsa_key -N '' -t rsa
+RUN apt install -y iptables
+RUN apt install -y iputils-ping
+RUN apt install -y net-tools
+RUN apt install -y vim
+RUN apt install -y curl
+
+# RUN yum update -y
+# RUN yum install -y docker docker-registry
+# RUN sed -i -e 's/overlay2/vfs/g' /etc/sysconfig/docker-storage
+
+EXPOSE 22
+
+# ENTRYPOINT ["/sbin/init", "systemctl", "start", "sshd"]
+ENTRYPOINT service ssh restart && bash

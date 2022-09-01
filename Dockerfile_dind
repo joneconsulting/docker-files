@@ -1,0 +1,21 @@
+FROM alpine:3.10
+
+RUN set -x \
+&& apk add --no-cache \
+  openssh \
+&& sed 's/#PermitRootLogin yes/PermitRootLogin yes/' -i /etc/ssh/sshd_config \
+&& echo 'root:P@ssw0rd' | chpasswd \
+&& ssh-keygen -f /etc/ssh/ssh_host_rsa_key -N '' -t rsa \
+&& ssh-keygen -f /etc/ssh/ssh_host_dsa_key -N '' -t dsa \
+&& mkdir -p /var/run/sshd
+EXPOSE 22
+
+# RUN /usr/sbin/sshd
+
+WORKDIR /root
+COPY ./Dockerfile ./Dockerfile
+RUN apk add --update python
+RUN apk add --update docker openrc
+RUN rc-update add docker boot
+
+CMD ["/usr/sbin/sshd", "-D"]
