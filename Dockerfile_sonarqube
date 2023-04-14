@@ -1,0 +1,82 @@
+FROM amazonlinux:2 as build
+
+ENV GRADLE_VERSION 7.4.2
+ENV NODE_VERSION 16.15.0
+ENV JAVA_HOME='/usr/lib/jvm/java-11-amazon-corretto.aarch64'
+
+ENV LANG='en_US.UTF-8' \
+    LANGUAGE='en_US:en' \
+    LC_ALL='en_US.UTF-8'
+
+RUN set -ex; \
+        yum update -y; \
+        yum install -y java-11-amazon-corretto.aarch64 nodejs git wget unzip tar xz; \
+        cd /root; \
+        wget https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-arm64.tar.xz; \
+        tar -xJf "node-v${NODE_VERSION}-linux-arm64.tar.xz" -C /usr/local --strip-components=1 --no-same-owner; \
+        npm i -g yarn; \
+        rm -rf node-v${NODE_VERSION}-linux-arm64.tar.xz; \
+        cd /opt; \
+        wget https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip; \
+        unzip gradle-${GRADLE_VERSION}-bin.zip; \
+        rm gradle-${GRADLE_VERSION}-bin.zip; \
+        ln -s /opt/gradle-${GRADLE_VERSION}/bin/gradle /usr/bin/gradle; \
+        groupadd -g 1000 sonarqube; \
+        useradd -g sonarqube -u 1000 -s /bin/bash sonarqube
+
+USER sonarqube
+RUN set -ex; \
+        export JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF8; \
+        cd ~sonarqube; \
+        git clone https://github.com/SonarSource/sonarqube; \
+        chmod -R 700 sonarqube; \
+        cd sonarqube; \
+        ./gradlew build
+
+
+FROM alpine:3.14.5
+
+ENV LANG='en_US.UTF-8' \
+    LANGUAGE='en_US:en' \
+    LC_ALL='en_US.UTF-8' \
+    JAVA_HOME='/usr/lib/jvm/java-11-openjdk' \
+    SONARQUBE_VERSION=9.5
+
+RUN set -ex; \
+    addgroup -S -g 1000 sonarqube; \
+    adduser -S -D -u 1000 -G sonarqube sonarqube; \
+    apk add --no-cache bash su-exec ttf-dejavu openjdk11-jre; \
+    echo "networkaddress.cache.ttl=5" >> "${JAVA_HOME}/conf/security/java.security"; \
+    sed --in-place --expression="s?securerandom.source=file:/dev/random?securerandom.source=file:/dev/urandom?g" "${JAVA_HOME}/conf/security/java.security"
+
+USER sonarqube
+COPY --from=build --chown=sonarqube:sonarqube /home/sonarqube/sonarqube/sonar-application/build/distributions/sonar-application-${SONARQUBE_VERSION}-SNAPSHOT.zip /home/sonarqube/sonarqube.zip
+
+RUN set -eux; \
+        cd /home/sonarqube; \
+        unzip sonarqube.zip && mv sonarqube-${SONARQUBE_VERSION}-SNAPSHOT sonarqube; \
+        rm sonarqube.zip; \
+        chown -R sonarqube:sonarqube sonarqube; \
+        chmod -R 777 sonarqube
+
+#
+# SonarQube setup
+#
+#ARG SONARQUBE_VERSION=9.5
+ENV JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF8 \
+    SONARQUBE_HOME=/home/sonarqube/sonarqube \
+    SONAR_VERSION="${SONARQUBE_VERSION}" \
+    SQ_DATA_DIR="/home/sonarqube/sonarqube/data" \
+    SQ_EXTENSIONS_DIR="/home/sonarqube/sonarqube/extensions" \
+    SQ_LOGS_DIR="/home/sonarqube/sonarqube/logs" \
+    SQ_TEMP_DIR="/home/sonarqube/sonarqube/temp"
+
+RUN set -eux; \
+    # this 777 will be replaced by 700 at runtime (allows semi-arbitrary "--user" values)
+    chmod -R 777 "${SQ_DATA_DIR}" "${SQ_EXTENSIONS_DIR}" "${SQ_LOGS_DIR}" "${SQ_TEMP_DIR}"
+
+WORKDIR ${SONARQUBE_HOME}
+EXPOSE 9000
+STOPSIGNAL SIGINT
+
+CMD ["java", "-jar", "lib/sonar-application-9.5-SNAPSHOT.jar"]

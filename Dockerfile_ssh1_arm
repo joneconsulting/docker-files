@@ -1,0 +1,25 @@
+FROM arm64v8/centos
+
+RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-Linux-*
+RUN sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-*
+
+# RUN apt-get update
+# RUN apt-get install -y curl
+# RUN curl -fsSL https://get.docker.com/ | sh
+# RUN usermod -aG docker root
+
+VOLUME ["/sys/fs/cgroup"]
+
+# install sshd
+RUN yum install -y epel-release
+RUN yum install -y openssh-server \
+&& sed 's/#PermitRootLogin yes/PermitRootLogin yes/' -i /etc/ssh/sshd_config \
+&& echo 'root:P@ssw0rd' | chpasswd \
+&& ssh-keygen -f /etc/ssh/ssh_host_rsa_key -N '' -t rsa
+RUN yum install -y openssh-clients
+RUN yum install -y iptables
+
+EXPOSE 22
+
+# ENTRYPOINT ["systemctl", "start", "docker"]
+CMD ["service", "sshd", "start"]
